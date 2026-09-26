@@ -7,6 +7,7 @@ DEFAULT_NAME = "Ollama"
 CONF_MODEL = "model"
 CONF_PROMPT = "prompt"
 CONF_THINK = "think"
+CONF_SEARXNG_URL = "searxng_url"
 
 CONF_KEEP_ALIVE = "keep_alive"
 DEFAULT_KEEP_ALIVE = -1  # seconds. -1 = indefinite, 0 = never

@@ -23,6 +23,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_LLM_HASS_API, CONF_NAME, CONF_URL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, llm
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     BooleanSelector,
     NumberSelector,
@@ -45,6 +46,7 @@ from .const import (
     CONF_MODEL,
     CONF_NUM_CTX,
     CONF_PROMPT,
+    CONF_SEARXNG_URL,
     CONF_THINK,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
@@ -59,6 +61,7 @@ from .const import (
     MIN_NUM_CTX,
     MODEL_NAMES,
 )
+from .websearch_tool import build_search_endpoint
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,8 +71,42 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_URL): TextSelector(
             TextSelectorConfig(type=TextSelectorType.URL)
         ),
+        vol.Required(CONF_SEARXNG_URL): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.URL)
+        ),
     }
 )
+
+STEP_RECONFIGURE_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_SEARXNG_URL): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.URL)
+        ),
+    }
+)
+
+
+async def validate_searxng_url(hass: HomeAssistant, searxng_url: str) -> str | None:
+    """Validate a SearXNG instance URL, returning an error key or None."""
+    try:
+        searxng_url = cv.url(searxng_url)
+    except vol.Invalid:
+        return "invalid_searxng_url"
+
+    try:
+        async with asyncio.timeout(DEFAULT_TIMEOUT):
+            response = await get_async_client(hass).get(
+                build_search_endpoint(searxng_url),
+                params={"q": "home assistant", "format": "json"},
+            )
+        response.raise_for_status()
+        response.json()
+    except (TimeoutError, httpx.HTTPError, ValueError):
+        # A 403 here usually means the JSON output format is not enabled
+        # in the SearXNG settings.
+        _LOGGER.debug("SearXNG validation failed for %s", searxng_url, exc_info=True)
+        return "cannot_connect_searxng"
+    return None
 
 
 class OllamaConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -93,6 +130,7 @@ class OllamaConfigFlow(ConfigFlow, domain=DOMAIN):
 
         errors = {}
         url = user_input[CONF_URL]
+        searxng_url = user_input[CONF_SEARXNG_URL]
 
         self._async_abort_entries_match({CONF_URL: url})
 
@@ -118,6 +156,11 @@ class OllamaConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected exception")
             errors["base"] = "unknown"
 
+        if not errors and (
+            searxng_error := await validate_searxng_url(self.hass, searxng_url)
+        ):
+            errors[CONF_SEARXNG_URL] = searxng_error
+
         if errors:
             return self.async_show_form(
                 step_id="user",
@@ -129,7 +172,32 @@ class OllamaConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(
             title=url,
-            data={CONF_URL: url},
+            data={CONF_URL: url, CONF_SEARXNG_URL: cv.url(searxng_url)},
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration of the SearXNG URL."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            searxng_url = user_input[CONF_SEARXNG_URL]
+            if searxng_error := await validate_searxng_url(self.hass, searxng_url):
+                errors[CONF_SEARXNG_URL] = searxng_error
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_SEARXNG_URL: cv.url(searxng_url)},
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_RECONFIGURE_DATA_SCHEMA, user_input or entry.data
+            ),
+            errors=errors,
         )
 
     @classmethod

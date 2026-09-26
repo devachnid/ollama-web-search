@@ -13,14 +13,17 @@ This custom integration connects Home Assistant to an Ollama LLM server and adds
 
 - Home Assistant (2024.7 or newer recommended)
 - Ollama server running and accessible
-- SearXNG instance running at `https://search.congeant.org`
+- A SearXNG instance reachable from Home Assistant, with the `json` output format enabled (under `search.formats` in SearXNG's `settings.yml`)
 
 ## Installation
 
 1. Copy the `custom_components/ollama_with_websearch` folder to your Home Assistant `custom_components` directory.
 2. Restart Home Assistant.
 3. Add the Ollama integration via Settings > Integrations.
-4. Configure your Ollama server URL and model.
+4. Enter your Ollama server URL and your SearXNG instance URL (e.g. `https://searx.example.org`).
+5. Add a conversation agent or AI task and choose a model.
+
+To change the SearXNG URL later, open the integration and choose **Reconfigure**.
 
 ## Usage
 

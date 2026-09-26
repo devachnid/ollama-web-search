@@ -27,6 +27,7 @@ from .const import (
     CONF_MODEL,
     CONF_NUM_CTX,
     CONF_PROMPT,
+    CONF_SEARXNG_URL,
     CONF_THINK,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_NAME,
@@ -42,6 +43,7 @@ __all__ = [
     "CONF_MODEL",
     "CONF_NUM_CTX",
     "CONF_PROMPT",
+    "CONF_SEARXNG_URL",
     "CONF_THINK",
     "CONF_URL",
     "DOMAIN",
@@ -56,12 +58,6 @@ type OllamaConfigEntry = ConfigEntry[ollama.AsyncClient]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Ollama."""
     await async_migrate_integration(hass)
-    # Register the web search tool
-    try:
-        from .websearch_tool import WebSearchTool
-        hass.helpers.llm.register_tool(WebSearchTool())
-    except Exception as e:
-        _LOGGER.error(f"Failed to register WebSearchTool: {e}")
     return True
 
 
@@ -76,6 +72,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: OllamaConfigEntry) -> bo
         raise ConfigEntryNotReady(err) from err
 
     entry.runtime_data = client
+
+    # Register the web search tool using the configured SearXNG instance
+    if searxng_url := settings.get(CONF_SEARXNG_URL):
+        try:
+            from .websearch_tool import WebSearchTool
+            hass.helpers.llm.register_tool(WebSearchTool(searxng_url))
+        except Exception as e:
+            _LOGGER.error(f"Failed to register WebSearchTool: {e}")
+    else:
+        _LOGGER.warning(
+            "No SearXNG URL configured for %s; web search is disabled. "
+            "Reconfigure the integration to set one",
+            entry.title,
+        )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(async_update_options))

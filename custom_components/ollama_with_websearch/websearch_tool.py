@@ -3,7 +3,14 @@
 import httpx
 from homeassistant.helpers.llm import Tool, ToolInput
 
-SEARXNG_URL = "https://search.congeant.org/search"
+
+def build_search_endpoint(searxng_url: str) -> str:
+    """Return the SearXNG search endpoint for a user-supplied instance URL."""
+    url = searxng_url.rstrip("/")
+    if not url.endswith("/search"):
+        url = f"{url}/search"
+    return url
+
 
 class WebSearchTool(Tool):
     name = "web_search"
@@ -14,6 +21,10 @@ class WebSearchTool(Tool):
             "description": "Search query to look up on the web."
         }
     }
+
+    def __init__(self, searxng_url: str) -> None:
+        """Initialize the tool with the SearXNG instance URL."""
+        self.search_endpoint = build_search_endpoint(searxng_url)
 
     async def call(self, tool_input: ToolInput) -> str:
         query = tool_input.args.get("query")
@@ -26,7 +37,7 @@ class WebSearchTool(Tool):
         }
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(SEARXNG_URL, params=params, timeout=10)
+                response = await client.get(self.search_endpoint, params=params, timeout=10)
                 response.raise_for_status()
                 data = response.json()
                 results = data.get("results", [])
